@@ -167,6 +167,26 @@ def get_area_code_info(area_id):
     return json_obj
 
 
+def check_area_code(area_code):
+    area_ids = area_code.split('_')
+    length = len(area_ids)
+    if length < 2:
+        return False
+    for idx in range(0, length - 1):
+        json_obj = get_area_code_info(area_ids[idx])
+        if json_obj is None:
+            return False
+        int_area_id = int(area_ids[idx + 1])
+        has_next_area_id = False
+        for obj in json_obj:
+            if int_area_id == obj['id']:
+                has_next_area_id = True
+                break
+        if not has_next_area_id:
+            return False
+    return True
+
+
 def generate_area_code():
     global _area_code
     gen_area_code = ''
@@ -228,7 +248,7 @@ def store_sku_id(new_sku_id):
     if new_sku_id in _sku_ids:
         return True
     with codecs.open(_in_path, 'w+', 'utf-8') as fp:
-        fp.write(os.linesep + 'https://item.jd.com/' + _area_code + os.linesep)
+        fp.write(os.linesep + 'https://item.jd.com/' + new_sku_id + '.html' + os.linesep)
     return True
 
 
