@@ -1,5 +1,4 @@
 from urllib import request
-from os import path
 
 import simplejson
 import codecs
@@ -7,29 +6,50 @@ import sys
 import os
 import re
 
-
-area_code = '16_1315_1316_53522'
-in_path = './in.txt'
-sku_ids = {}
+_headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+    'Content-Type': 'text/html;charset=UTF-8'
+}
+_area_code = '16_1315_1316_53522'
+_in_path = './in.txt'
+_sku_info = {}
+_sku_ids = {}
 
 double_byte_rule = re.compile('<strong>([\u4e00-\u9fa5]+)</strong>|(\d+)')
 product_rule = re.compile('<div class=\"p-name\">([^<]*)</div>')
+sku_ids_rule = re.compile('https://item.jd.com/(\d+)')
 url_rule = re.compile('[a-zA-z]+://[^\s]*')
-get_value_rule = re.compile('=(.*)')
-sku_ids_rule = re.compile('(\d+)')
+get_value_behind_equality_sign_rule = re.compile('=(.*)')
 
 
-def get_html_content(url, encoding='gb18030'):
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
-    }
-    req = request.Request(url=url, headers=headers)
+def get_html_encoding(headers):
+    if headers is None or headers['Content-Type'] is None:
+        return 'gb18030'
+    encoding = get_value_behind_equality_sign(headers['Content-Type'])
+    if encoding is None:
+        return 'gb18030'
+    if -1 != encoding.find('gb'):
+        encoding = 'gb18030'
+    return encoding
+
+
+def get_html_content(url):
+    global _headers
+    req = request.Request(url=url, headers=_headers)
     page = request.urlopen(req)
+    encoding = get_html_encoding(page.headers)
     str_list = page.readlines()
-    content = ""
-    for s in str_list:
-        content += s.decode(encoding)
-    return content
+    contents = ""
+    for string in str_list:
+        contents += string.decode(encoding)
+    return contents
+
+
+def check_redirect(url):
+    global _headers
+    req = request.Request(url=url, headers=_headers)
+    page = request.urlopen(req)
+    return page.url != url
 
 
 def regex_result(regex, string, find_all=False, separator=' '):
@@ -47,7 +67,7 @@ def regex_result(regex, string, find_all=False, separator=' '):
         if result_match is None:
             return None
         for s in result_match.groups():
-            if s is not None or s != '':
+            if s is not None and s != '':
                 result += s + separator
     if result == '':
         return None
@@ -58,22 +78,22 @@ def regex_result(regex, string, find_all=False, separator=' '):
 
 
 def check_sku_id(sku_id):
-    url = 'https://item.jd.com/' + sku_id
-    content = get_html_content(url)
+    url = 'https://item.jd.com/' + sku_id + '.html'
+    return not check_redirect(url)
 
 
 def get_sku_id(url):
     return regex_result(sku_ids_rule, url)
 
 
-def get_value(string):
-    return regex_result(get_value_rule, string)
+def get_value_behind_equality_sign(string):
+    return regex_result(get_value_behind_equality_sign_rule, string)
 
 
 def get_product_name(sku_id):
     url = 'https://item.jd.com/' + sku_id + '.html'
-    content = get_html_content(url)
-    return regex_result(product_rule, content)
+    contents = get_html_content(url)
+    return regex_result(product_rule, contents)
 
 
 def get_param_value_in_url(url, param):
@@ -90,7 +110,7 @@ def get_product_price(sku_id):
 
 def get_product_stock(sku_id, area_code):
     url = 'https://c0.3.cn/stock?skuId=' + sku_id + '&area=' + area_code + '&cat=1,2,3&extraParam={"originid":"1"}'
-    json_resp = get_html_content(url, 'gb18030')
+    json_resp = get_html_content(url)
     json_obj = simplejson.loads(json_resp)['stock']
     # result = double_byte_rule.sub('', json_obj['stockDesc'])
     return regex_result(double_byte_rule, json_obj['stockDesc'], True, ':')
@@ -98,7 +118,7 @@ def get_product_stock(sku_id, area_code):
 
 def get_product_coupon(sku_id, area_code):
     url = 'https://cd.jd.com/promotion/v2?skuId=' + sku_id + '&area=' + area_code + '&cat=1,2,3'
-    json_resp = get_html_content(url, 'gb18030')
+    json_resp = get_html_content(url)
     json_obj = simplejson.loads(json_resp)
     coupon_list = json_obj['skuCoupon']
     if len(coupon_list) == 0:
@@ -148,7 +168,7 @@ def get_area_code_info(area_id):
 
 
 def generate_area_code():
-    global area_code
+    global _area_code
     gen_area_code = ''
     area_name = ''
     cur_area_id = '0'
@@ -156,9 +176,9 @@ def generate_area_code():
         json_obj = get_area_code_info(cur_area_id)
         if json_obj is None:
             gen_area_code = gen_area_code[0:-1]
-            area_code = gen_area_code
+            _area_code = gen_area_code
             area_name = area_name[0:-1]
-            print('当前的区域为,' + area_name, '区域代码为:', area_code)
+            print('当前的区域为,' + area_name, '区域代码为:', _area_code)
             break
 
         for obj in json_obj:
@@ -174,41 +194,41 @@ def generate_area_code():
 
 
 def store_area_code():
-    global area_code, in_path
+    global _area_code, _in_path
     # 不管需不需要写入，都检查是否可以写入
-    content = read_file(in_path, 'utf-8', True, True)
-    if content is None:
+    contents = read_file(_in_path, 'utf-8', True, True)
+    if contents is None:
         return False
     tmp_area_code = None
-    for idx in range(0, len(content)):
-        if -1 != content[idx].find('area_code='):
-            tmp_area_code = get_value(content[idx])
-            if tmp_area_code is not None and tmp_area_code != area_code:
-                content[idx] = 'area_code=' + area_code + os.linesep
+    for idx in range(0, len(contents)):
+        if -1 != contents[idx].find('area_code='):
+            tmp_area_code = get_value_behind_equality_sign(contents[idx])
+            if tmp_area_code is not None and tmp_area_code != _area_code:
+                contents[idx] = 'area_code=' + _area_code + os.linesep
             break
     if tmp_area_code is not None:
-        if content[-1][-1] != '\n':
-            content[-1] += '\n'
-        content.append('area_code=' + area_code + os.linesep)
-    with codecs.open(in_path, 'w', 'utf-8') as fp:
-        fp.writelines(content)
+        if contents[-1][-1] != '\n':
+            contents[-1] += '\n'
+        contents.append('area_code=' + _area_code + os.linesep)
+    with codecs.open(_in_path, 'w', 'utf-8') as fp:
+        fp.writelines(contents)
     return True
 
 
 def store_sku_id(new_sku_id):
-    global in_path, sku_ids
+    global _in_path, _sku_ids
     # 避免重复读取
-    if not sku_ids:
-        content = read_file(in_path, 'utf-8', True, True)
-        if content is None:
+    if not _sku_ids:
+        contents = read_file(_in_path, 'utf-8', True, True)
+        if contents is None:
             return False
-        for line in content:
+        for line in contents:
             sku_id = get_sku_id(line)
-            sku_ids[sku_id] = True
-    if new_sku_id in sku_ids:
+            _sku_ids[sku_id] = True
+    if new_sku_id in _sku_ids:
         return True
-    with codecs.open(in_path, 'w+', 'utf-8') as fp:
-        fp.write(os.linesep + 'https://item.jd.com/' + area_code + os.linesep)
+    with codecs.open(_in_path, 'w+', 'utf-8') as fp:
+        fp.write(os.linesep + 'https://item.jd.com/' + _area_code + os.linesep)
     return True
 
 
@@ -228,25 +248,24 @@ def check_file(file_path, check_writable=False, create_while_no_exist=False):
 def read_file(file_path, encoding='utf-8', check_writable=False, create_while_no_exist=False):
     if not check_file(file_path, check_writable, create_while_no_exist):
         return None
-    content = []
     with codecs.open(file_path, 'r', encoding) as fp:
-        content = fp.readlines()
-    return content
+        contents = fp.readlines()
+    return contents
 
 
-def get_sku_id_and_area_code(content):
-    if content is None:
+def get_sku_id_and_area_code():
+    global _area_code, _sku_ids, _in_path
+    contents = read_file(_in_path)
+    if contents is None:
         return
-    global area_code
-    global sku_ids
-    for string in content:
+    for string in contents:
         sku_id = get_sku_id(string)
         if sku_id is not None:
-            sku_ids[sku_id] = True
+            _sku_ids[sku_id] = True
         else:
-            area_code_tmp = get_value(string)
+            area_code_tmp = get_value_behind_equality_sign(string)
             if area_code_tmp is not None:
-                area_code = area_code_tmp
+                _area_code = area_code_tmp
 
 
 def handle_argv():
@@ -273,36 +292,45 @@ def handle_argv():
     #         if path.exists()
 
 
+def gen_sku_info():
+    global _sku_info
+    for sku_id in _sku_ids:
+        _sku_info[sku_id] = {}
+        _sku_info[sku_id]['price'] = get_product_price(sku_id)
+        _sku_info[sku_id]['stock'] = get_product_stock(sku_id, _area_code)
+        _sku_info[sku_id]['coupon'] = get_product_coupon(sku_id, _area_code)
+        _sku_info[sku_id]['name'] = get_product_name(sku_id)
+
+
+def show_sku_info():
+    global _sku_ids, _sku_info
+    max_width = {'price': 0, 'stock': 0, 'coupon': 0, 'name': 0}
+    for sku_id in _sku_ids:
+        max_width['price'] = max(max_width['price'], get_length(_sku_info[sku_id]['price']))
+        max_width['stock'] = max(max_width['stock'], get_length(_sku_info[sku_id]['stock']))
+        max_width['coupon'] = max(max_width['coupon'], get_length(_sku_info[sku_id]['coupon']))
+        max_width['name'] = max(max_width['name'], get_length(_sku_info[sku_id]['name']))
+    max_width['price'] = max(max_width['price'], get_length('price'))
+    max_width['stock'] = max(max_width['stock'], get_length('stock'))
+    max_width['coupon'] = max(max_width['coupon'], get_length('coupon'))
+    max_width['name'] = max(max_width['name'], get_length('name'))
+    print(align_string('price', max_width['price'], 0) + ' | '
+          + align_string('stock', max_width['stock'], 0) + ' | '
+          + align_string('coupon', max_width['coupon'], 0) + ' | '
+          + align_string('name', max_width['name'], 0))
+    print(align_string('', max_width['price'], 0, '-') + '-+-'
+          + align_string('', max_width['stock'], 0, '-') + '-+-'
+          + align_string('', max_width['coupon'], 0, '-') + '-+-'
+          + align_string('', max_width['name'], 0, '-'))
+    for sku_id in _sku_info:
+        print(align_string(_sku_info[sku_id]['price'], max_width['price'], 1) + ' | '
+              + align_string(_sku_info[sku_id]['stock'], max_width['stock'], 0) + ' | '
+              + align_string(_sku_info[sku_id]['coupon'], max_width['coupon'], 0) + ' | '
+              + align_string(_sku_info[sku_id]['name'], max_width['name'], 0))
+
+
 if __name__ == '__main__':
     handle_argv()
-    # lines = read_file(in_path)
-    # get_sku_id_and_area_code(lines)
-    # sku_info = {}
-    # max_width = {'price': 0, 'stock': 0, 'coupon': 0, 'name': 0}
-    # for sku_id in sku_ids:
-    #     sku_info[sku_id] = {}
-    #     sku_info[sku_id]['price'] = get_product_price(sku_id)
-    #     sku_info[sku_id]['stock'] = get_product_stock(sku_id, area_code)
-    #     sku_info[sku_id]['coupon'] = get_product_coupon(sku_id, area_code)
-    #     sku_info[sku_id]['name'] = get_product_name(sku_id)
-    #     max_width['price'] = max(max_width['price'], get_length(sku_info[sku_id]['price']))
-    #     max_width['stock'] = max(max_width['stock'], get_length(sku_info[sku_id]['stock']))
-    #     max_width['coupon'] = max(max_width['coupon'], get_length(sku_info[sku_id]['coupon']))
-    #     max_width['name'] = max(max_width['name'], get_length(sku_info[sku_id]['name']))
-    # max_width['price'] = max(max_width['price'], get_length('price'))
-    # max_width['stock'] = max(max_width['stock'], get_length('stock'))
-    # max_width['coupon'] = max(max_width['coupon'], get_length('coupon'))
-    # max_width['name'] = max(max_width['name'], get_length('name'))
-    # print(align_string('price', max_width['price'], 0) + ' | '
-    #       + align_string('stock', max_width['stock'], 0) + ' | '
-    #       + align_string('coupon', max_width['coupon'], 0) + ' | '
-    #       + align_string('name', max_width['name'], 0))
-    # print(align_string('', max_width['price'], 0, '-') + '-+-'
-    #       + align_string('', max_width['stock'], 0, '-') + '-+-'
-    #       + align_string('', max_width['coupon'], 0, '-') + '-+-'
-    #       + align_string('', max_width['name'], 0, '-'))
-    # for sku_id in sku_info:
-    #     print(align_string(sku_info[sku_id]['price'], max_width['price'], 1) + ' | '
-    #           + align_string(sku_info[sku_id]['stock'], max_width['stock'], 0) + ' | '
-    #           + align_string(sku_info[sku_id]['coupon'], max_width['coupon'], 0) + ' | '
-    #           + align_string(sku_info[sku_id]['name'], max_width['name'], 0))
+    get_sku_id_and_area_code()
+    gen_sku_info()
+    show_sku_info()
