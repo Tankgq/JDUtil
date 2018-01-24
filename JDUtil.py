@@ -167,24 +167,32 @@ def get_area_code_info(area_id):
     return json_obj
 
 
+def get_area_id_name(area_id, parent_area_id=None):
+    if parent_area_id is not None:
+        json_obj = get_area_code_info(parent_area_id)
+        int_area_id = int(area_id)
+        for obj in json_obj:
+            if int_area_id == obj['id']:
+                return obj['name']
+        return None
+
+
 def check_area_code(area_code):
     area_ids = area_code.split('_')
     length = len(area_ids)
     if length < 2:
-        return False
+        return None
+    area_code_info = ''
+    area_id_name = get_area_id_name(area_ids[0], '0')
+    if area_id_name is None:
+        return None
+    area_code_info += area_id_name
     for idx in range(0, length - 1):
-        json_obj = get_area_code_info(area_ids[idx])
-        if json_obj is None:
-            return False
-        int_area_id = int(area_ids[idx + 1])
-        has_next_area_id = False
-        for obj in json_obj:
-            if int_area_id == obj['id']:
-                has_next_area_id = True
-                break
-        if not has_next_area_id:
-            return False
-    return True
+        area_id_name = get_area_id_name(area_ids[idx + 1], area_ids[idx])
+        if area_id_name is None:
+            return None
+        area_code_info += '_' + area_id_name
+    return area_code_info
 
 
 def generate_area_code():
