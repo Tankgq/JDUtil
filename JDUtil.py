@@ -1,3 +1,4 @@
+from operator import itemgetter
 from urllib import request
 
 import simplejson
@@ -10,16 +11,45 @@ _headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
     'Content-Type': 'text/html;charset=UTF-8'
 }
+_arguments = [
+    '-in_path',
+    '-gen_area_code',
+    '-set_area_code',
+    '-add_sku_id',
+    '-remove_sku_id',
+    '-not_output_file',
+    '-out_path',
+]
+_argument_shortcut = [
+    '-I',
+    '-G',
+    '-S',
+    '-A',
+    '-R',
+    '-N',
+    '-O'
+]
+_argument_priority = {
+    _arguments[0]: 1,
+    _arguments[1]: 2,
+    _arguments[2]: 2,
+    _arguments[3]: 3,
+    _arguments[4]: 3,
+    _arguments[5]: 4,
+    _arguments[6]: 4
+}
 _area_code = '16_1315_1316_53522'
+_out_path = './out.txt'
 _in_path = './in.txt'
 _sku_info = {}
 _sku_ids = {}
 
-double_byte_rule = re.compile('<strong>([\u4e00-\u9fa5]+)</strong>|(\d+)')
-product_rule = re.compile('<div class=\"p-name\">([^<]*)</div>')
-sku_ids_rule = re.compile('https://item.jd.com/(\d+)')
-url_rule = re.compile('[a-zA-z]+://[^\s]*')
-get_value_behind_equality_sign_rule = re.compile('=(.*)')
+_double_byte_rule = re.compile('<strong>([\u4e00-\u9fa5]+)</strong>|(\d+)')
+_product_rule = re.compile('<div class=\"p-name\">([^<]*)</div>')
+_sku_ids_rule = re.compile('https://item.jd.com/(\d+)')
+_value_behind_equality_sign_rule = re.compile('=(.*)')
+_url_rule = re.compile('[a-zA-z]+://[^\s]*')
+_argument_rule = re.compile('(-.*)=')
 
 
 def get_html_encoding(headers):
@@ -83,17 +113,25 @@ def check_sku_id(sku_id):
 
 
 def get_sku_id(url):
-    return regex_result(sku_ids_rule, url)
+    global _sku_ids_rule
+    return regex_result(_sku_ids_rule, url)
+
+
+def get_argument_key(string):
+    global _argument_rule
+    return regex_result(_argument_rule, string)
 
 
 def get_value_behind_equality_sign(string):
-    return regex_result(get_value_behind_equality_sign_rule, string)
+    global _value_behind_equality_sign_rule
+    return regex_result(_value_behind_equality_sign_rule, string)
 
 
 def get_product_name(sku_id):
     url = 'https://item.jd.com/' + sku_id + '.html'
     contents = get_html_content(url)
-    return regex_result(product_rule, contents)
+    global _product_rule
+    return regex_result(_product_rule, contents)
 
 
 def get_param_value_in_url(url, param):
@@ -105,29 +143,32 @@ def get_product_price(sku_id):
     url = 'http://p.3.cn/prices/mgets?skuIds=' + sku_id
     json_resp = get_html_content(url)
     json_obj = simplejson.loads(json_resp)
+    if len(json_obj) == 0 or 'p' not in json_obj[0]:
+        return ''
     return json_obj[0]['p']
 
 
 def get_product_stock(sku_id, area_code):
     url = 'https://c0.3.cn/stock?skuId=' + sku_id + '&area=' + area_code + '&cat=1,2,3&extraParam={"originid":"1"}'
     json_resp = get_html_content(url)
-    json_obj = simplejson.loads(json_resp)['stock']
-    # result = double_byte_rule.sub('', json_obj['stockDesc'])
-    return regex_result(double_byte_rule, json_obj['stockDesc'], True, ':')
+    json_obj = simplejson.loads(json_resp)
+    if 'stock' not in json_obj or 'stockDesc' not in json_obj['stock']:
+        return ''
+    global _double_byte_rule
+    return regex_result(_double_byte_rule, json_obj['stock']['stockDesc'], True, ':')
 
 
 def get_product_coupon(sku_id, area_code):
     url = 'https://cd.jd.com/promotion/v2?skuId=' + sku_id + '&area=' + area_code + '&cat=1,2,3'
     json_resp = get_html_content(url)
     json_obj = simplejson.loads(json_resp)
-    coupon_list = json_obj['skuCoupon']
-    if len(coupon_list) == 0:
+    if 'skuCoupon' not in json_obj or len(json_obj['skuCoupon']) == 0:
         return ''
+    coupon_list = json_obj['skuCoupon']
     result = ''
     for info in coupon_list:
         result += str(info['quota']) + '-' + str(info['discount']) + ', '
-    result = result[:-2]
-    return result
+    return result[:-2]
 
 
 def get_length(string):
@@ -136,11 +177,11 @@ def get_length(string):
     return ((utf8_length - length) >> 1) + length
 
 
+# align_type -1: left, 0: center, 1: right
 def align_string(string, width, align_type=1, fill_char=' '):
     length = get_length(string)
     if width <= length:
         return string
-    # -1: left, 0: center, 1: right
     if align_type == -1:
         front = 0
     elif align_type == 0:
@@ -171,7 +212,11 @@ def get_area_id_name(area_id, parent_area_id=None):
     if parent_area_id is not None:
         json_obj = get_area_code_info(parent_area_id)
         int_area_id = int(area_id)
+        if len(json_obj) == 0:
+            return None
         for obj in json_obj:
+            if 'id' not in obj or 'name' not in obj:
+                continue
             if int_area_id == obj['id']:
                 return obj['name']
         return None
@@ -210,6 +255,8 @@ def generate_area_code():
             break
 
         for obj in json_obj:
+            if 'id' not in obj or 'name' not in obj:
+                continue
             print('name: ' + obj['name'] + ', id: ' + str(obj['id']))
         area_id = input('请选择所在区域: ')
         int_area_id = int(area_id)
@@ -296,28 +343,29 @@ def get_sku_id_and_area_code():
                 _area_code = area_code_tmp
 
 
+def get_argument_priority(arg_key):
+    global _arguments, _argument_shortcut, _argument_priority
+    _arg_idx = _arguments.index(arg_key)
+    if _arg_idx == -1:
+        _arg_idx = _argument_shortcut.index(arg_key)
+    if _arg_idx == -1:
+        return -1
+    return _argument_priority[_arg_idx]
+
+
 def handle_argv():
     option_result = False
-
-    # 在参数前面根据优先级加字符，然后排序
-    # argv = sys.argv[1:]
-    # for idx in range(0, len(argv)):
-    #     if -1 != sys.argv[idx].find('-gen_area_code'):
-    #         argv[idx] = '9' + argv[idx]
-    #     elif -1 !=
-
-    # for idx in range(1, len(sys.argv)):
-    #     if -1 != sys.argv[idx].find('-gen_area_code'):
-    #         generate_area_code()
-    #         flag = store_area_code()
-    #     elif sys.argv[idx].find('-add='):
-    #         sku_id = get_value(sys.argv[idx])
-    #         flag = store_sku_id(sku_id)
-    #     elif sys.argv[idx].find('-area_code='):
-    #         area_code_tmp = get_value(sys.argv[idx])
-    #         flag = check_area_code(area_code_tmp)
-    #     elif sys.argv[idx].find('-in_path='):
-    #         if path.exists()
+    argv = sys.argv[1:]
+    arg_list = []
+    for arg in argv:
+        arg_key = get_argument_key(arg)
+        if arg_key is None:
+            continue
+        arg_priority = get_argument_priority(arg_key)
+        if arg_priority == -1:
+            continue
+        arg_value = get_value_behind_equality_sign(arg)
+        arg_list.append([arg_priority, arg_key, arg_value])
 
 
 def gen_sku_info():
@@ -342,19 +390,27 @@ def show_sku_info():
     max_width['stock'] = max(max_width['stock'], get_length('stock'))
     max_width['coupon'] = max(max_width['coupon'], get_length('coupon'))
     max_width['name'] = max(max_width['name'], get_length('name'))
-    print(align_string('price', max_width['price'], 0) + ' | '
-          + align_string('stock', max_width['stock'], 0) + ' | '
-          + align_string('coupon', max_width['coupon'], 0) + ' | '
-          + align_string('name', max_width['name'], 0))
-    print(align_string('', max_width['price'], 0, '-') + '-+-'
-          + align_string('', max_width['stock'], 0, '-') + '-+-'
-          + align_string('', max_width['coupon'], 0, '-') + '-+-'
-          + align_string('', max_width['name'], 0, '-'))
+    contents = [align_string('price', max_width['price'], 0) + ' | '
+                + align_string('stock', max_width['stock'], 0) + ' | '
+                + align_string('coupon', max_width['coupon'], 0) + ' | '
+                + align_string('name', max_width['name'], 0),
+                align_string('', max_width['price'], 0, '-') + '-+-'
+                + align_string('', max_width['stock'], 0, '-') + '-+-'
+                + align_string('', max_width['coupon'], 0, '-') + '-+-'
+                + align_string('', max_width['name'], 0, '-')]
     for sku_id in _sku_info:
-        print(align_string(_sku_info[sku_id]['price'], max_width['price'], 1) + ' | '
-              + align_string(_sku_info[sku_id]['stock'], max_width['stock'], 0) + ' | '
-              + align_string(_sku_info[sku_id]['coupon'], max_width['coupon'], 0) + ' | '
-              + align_string(_sku_info[sku_id]['name'], max_width['name'], 0))
+        contents.append(align_string(_sku_info[sku_id]['price'], max_width['price'], 1) + ' | '
+                        + align_string(_sku_info[sku_id]['stock'], max_width['stock'], 0) + ' | '
+                        + align_string(_sku_info[sku_id]['coupon'], max_width['coupon'], 0) + ' | '
+                        + align_string(_sku_info[sku_id]['name'], max_width['name'], 0))
+    global _out_path
+    if _out_path is None:
+        for line in contents:
+            print(line)
+    else:
+        with codecs.open(_out_path, 'w', 'utf-8') as fp:
+            for line in contents:
+                fp.write(line + os.linesep)
 
 
 if __name__ == '__main__':
