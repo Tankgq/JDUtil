@@ -11,15 +11,15 @@ _headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
     'Content-Type': 'text/html;charset=UTF-8'
 }
-_argument_priority = [1, 2, 2, 3, 3, 4, 4]
+_argument_priority = [1, 2, 2, 3, 4, 4, 5]
 _arguments = {
     '-in_path': _argument_priority[0], '-I': _argument_priority[0],
     '-gen_area_code': _argument_priority[1], '-G': _argument_priority[1],
     '-set_area_code': _argument_priority[2], '-S': _argument_priority[2],
     '-add_sku_id': _argument_priority[3], '-A': _argument_priority[3],
-    '-remove_sku_id': _argument_priority[4], '-R': _argument_priority[4],
+    '-out_path': _argument_priority[4], '-O': _argument_priority[4],
     '-not_output_file': _argument_priority[5], '-N': _argument_priority[5],
-    '-out_path': _argument_priority[6], '-O': _argument_priority[6]
+    '-remove_sku_id': _argument_priority[6], '-R': _argument_priority[6]
 }
 _area_code = '16_1315_1316_53522'
 _out_path = './out.txt'
@@ -223,21 +223,38 @@ def check_area_code(area_code):
     return area_code_info
 
 
-def store_sku_id(new_sku_id):
-    global _in_path, _sku_ids
-    # 避免重复读取
-    if not _sku_ids:
-        contents = read_file(_in_path, 'utf-8', True, True)
-        if contents is None:
-            return False
-        for line in contents:
-            sku_id = get_sku_id(line)
+def read_sku_ids_in_file(file_path):
+    contents = read_file(file_path, 'utf-8', True, True)
+    if contents is None:
+        return False
+    global _sku_ids
+    for line in contents:
+        sku_id = get_sku_id(line)
+        if sku_id is not None and check_sku_id(sku_id):
             _sku_ids[sku_id] = True
-    if new_sku_id in _sku_ids:
-        return True
+
+
+def store_sku_id(new_sku_ids):
+    global _in_path, _sku_ids
+    if not _sku_ids:
+        read_sku_ids_in_file(_in_path)
+    need_store = []
+    result = True
+    for sku_id in new_sku_ids:
+        if sku_id is None or len(sku_id) == 0:
+            print('sku_id 不能为空.')
+            result = False
+        if check_sku_id(sku_id):
+            print('sku_id:', sku_id, '错误')
+            result = False
+        if sku_id not in _sku_ids:
+            need_store.append(sku_id)
+    if len(need_store) == 0:
+        return result
     with codecs.open(_in_path, 'w+', 'utf-8') as fp:
-        fp.write(os.linesep + 'https://item.jd.com/' + new_sku_id + '.html' + os.linesep)
-    return True
+        for sku_id in need_store:
+            fp.write(os.linesep + 'https://item.jd.com/' + sku_id + '.html' + os.linesep)
+    return result
 
 
 def check_file(file_path, check_writable=False, create_while_no_exist=False):
@@ -261,7 +278,7 @@ def read_file(file_path, encoding='utf-8', check_writable=False, create_while_no
     return contents
 
 
-def get_sku_id_and_area_code():
+def get_info_in_file():
     global _area_code, _sku_ids, _in_path
     contents = read_file(_in_path)
     if contents is None:
@@ -363,14 +380,66 @@ def add_sku_id(arg_value):
     global _sku_ids
     sku_id_list = arg_value.split(',')
     result = True
+    sku_ids_store = []
     for sku_id in sku_id_list:
         if check_sku_id(sku_id) is False:
             print('添加 sku_id :', sku_id, '失败.')
             result = False
             continue
-        if not store_sku_id(sku_id):
-            print('存储 sku_id', sku_id, '到 in_path失败')
-            result = False
+        sku_ids_store.append(sku_id)
+    if not store_sku_id(sku_ids_store):
+        result = False
+    return result
+
+
+# 参数只是占位置用的
+def remove_out_path(arg_value):
+    global _out_path
+    _out_path = None
+    return True
+
+
+def set_out_path(arg_value):
+    if arg_value is None or len(arg_value):
+        print(arg_value, '不能为空.')
+        return False
+    if not check_file(arg_value, True):
+        print('文件', arg_value, '不存在或者不可读.')
+        return False
+    global _out_path
+    _out_path = arg_value
+    return True
+
+
+def remove_sku_id(arg_value):
+    if arg_value is None or len(arg_value) == 0:
+        return False
+    global _sku_ids, _in_path
+    if not _sku_ids:
+        read_sku_ids_in_file(_in_path)
+    result = True
+    sku_ids = {}
+    if arg_value.find('all') != -1:
+        sku_ids = _sku_ids
+    else:
+        for sku_id in arg_value:
+            if sku_id in _sku_ids:
+                sku_ids[sku_id] = True
+            else:
+                print(sku_id, '未找到.')
+                result = False
+    contents = read_file(_in_path, check_writable=True)
+    if contents is None:
+        print(_in_path, '文件不存在或者不可写.')
+        result = False
+    new_contents = []
+    for line in contents:
+        sku_id = get_sku_id(line)
+        if sku_id is not None and sku_id in sku_ids:
+            continue
+        new_contents.append(line)
+    with codecs.open(_in_path, 'w', 'utf-8') as fp:
+        fp.writelines(new_contents)
     return result
 
 
@@ -379,9 +448,9 @@ _argument_option = {
     '-gen_area_code': generate_area_code, '-G': generate_area_code,
     '-set_area_code': set_area_code, '-S': set_area_code,
     '-add_sku_id': add_sku_id, '-A': add_sku_id,
-    '-remove_sku_id': _argument_priority[4], '-R': _argument_priority[4],
-    '-not_output_file': _argument_priority[5], '-N': _argument_priority[5],
-    '-out_path': _argument_priority[6], '-O': _argument_priority[6]
+    '-out_path': set_out_path, '-O': set_out_path,
+    '-not_output_file': remove_out_path, '-N': remove_out_path,
+    '-remove_sku_id': remove_sku_id, '-R': remove_sku_id,
 }
 
 
@@ -409,14 +478,15 @@ def handle_argv():
     return option_result
 
 
-def gen_sku_info():
+def generate_sku_info():
     global _sku_info
     for sku_id in _sku_ids:
-        _sku_info[sku_id] = {}
-        _sku_info[sku_id]['price'] = get_product_price(sku_id)
-        _sku_info[sku_id]['stock'] = get_product_stock(sku_id, _area_code)
-        _sku_info[sku_id]['coupon'] = get_product_coupon(sku_id, _area_code)
-        _sku_info[sku_id]['name'] = get_product_name(sku_id)
+        _sku_info[sku_id] = {
+            'price': get_product_price(sku_id),
+            'stock': get_product_stock(sku_id, _area_code),
+            'coupon': get_product_coupon(sku_id, _area_code),
+            'name': get_product_name(sku_id)
+        }
 
 
 def show_sku_info():
@@ -456,6 +526,6 @@ def show_sku_info():
 
 if __name__ == '__main__':
     handle_argv()
-    get_sku_id_and_area_code()
-    gen_sku_info()
+    get_info_in_file()
+    generate_sku_info()
     show_sku_info()
