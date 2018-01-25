@@ -11,32 +11,15 @@ _headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
     'Content-Type': 'text/html;charset=UTF-8'
 }
-_arguments = [
-    '-in_path',
-    '-gen_area_code',
-    '-set_area_code',
-    '-add_sku_id',
-    '-remove_sku_id',
-    '-not_output_file',
-    '-out_path',
-]
-_argument_shortcut = [
-    '-I',
-    '-G',
-    '-S',
-    '-A',
-    '-R',
-    '-N',
-    '-O'
-]
-_argument_priority = {
-    _arguments[0]: 1,
-    _arguments[1]: 2,
-    _arguments[2]: 2,
-    _arguments[3]: 3,
-    _arguments[4]: 3,
-    _arguments[5]: 4,
-    _arguments[6]: 4
+_argument_priority = [1, 2, 2, 3, 3, 4, 4]
+_arguments = {
+    '-in_path': _argument_priority[0], '-I': _argument_priority[0],
+    '-gen_area_code': _argument_priority[1], '-G': _argument_priority[1],
+    '-set_area_code': _argument_priority[2], '-S': _argument_priority[2],
+    '-add_sku_id': _argument_priority[3], '-A': _argument_priority[3],
+    '-remove_sku_id': _argument_priority[4], '-R': _argument_priority[4],
+    '-not_output_file': _argument_priority[5], '-N': _argument_priority[5],
+    '-out_path': _argument_priority[6], '-O': _argument_priority[6]
 }
 _area_code = '16_1315_1316_53522'
 _out_path = './out.txt'
@@ -48,8 +31,8 @@ _double_byte_rule = re.compile('<strong>([\u4e00-\u9fa5]+)</strong>|(\d+)')
 _product_rule = re.compile('<div class=\"p-name\">([^<]*)</div>')
 _sku_ids_rule = re.compile('https://item.jd.com/(\d+)')
 _value_behind_equality_sign_rule = re.compile('=(.*)')
-_url_rule = re.compile('[a-zA-z]+://[^\s]*')
-_argument_rule = re.compile('(-.*)=')
+_argument_rule = re.compile('(-[_A-Za-z0-9]+)')
+_alpha_rule = re.compile('([a-zA-Z]+)')
 
 
 def get_html_encoding(headers):
@@ -117,7 +100,7 @@ def get_sku_id(url):
     return regex_result(_sku_ids_rule, url)
 
 
-def get_argument_key(string):
+def get_argument_option(string):
     global _argument_rule
     return regex_result(_argument_rule, string)
 
@@ -240,56 +223,6 @@ def check_area_code(area_code):
     return area_code_info
 
 
-def generate_area_code():
-    global _area_code
-    gen_area_code = ''
-    area_name = ''
-    cur_area_id = '0'
-    while True:
-        json_obj = get_area_code_info(cur_area_id)
-        if json_obj is None:
-            gen_area_code = gen_area_code[0:-1]
-            _area_code = gen_area_code
-            area_name = area_name[0:-1]
-            print('当前的区域为,' + area_name, '区域代码为:', _area_code)
-            break
-
-        for obj in json_obj:
-            if 'id' not in obj or 'name' not in obj:
-                continue
-            print('name: ' + obj['name'] + ', id: ' + str(obj['id']))
-        area_id = input('请选择所在区域: ')
-        int_area_id = int(area_id)
-        for obj in json_obj:
-            if int_area_id == obj['id']:
-                gen_area_code += area_id + '_'
-                area_name += obj['name'] + '-'
-                cur_area_id = area_id
-                break
-
-
-def store_area_code():
-    global _area_code, _in_path
-    # 不管需不需要写入，都检查是否可以写入
-    contents = read_file(_in_path, 'utf-8', True, True)
-    if contents is None:
-        return False
-    tmp_area_code = None
-    for idx in range(0, len(contents)):
-        if -1 != contents[idx].find('area_code='):
-            tmp_area_code = get_value_behind_equality_sign(contents[idx])
-            if tmp_area_code is not None and tmp_area_code != _area_code:
-                contents[idx] = 'area_code=' + _area_code + os.linesep
-            break
-    if tmp_area_code is not None:
-        if contents[-1][-1] != '\n':
-            contents[-1] += '\n'
-        contents.append('area_code=' + _area_code + os.linesep)
-    with codecs.open(_in_path, 'w', 'utf-8') as fp:
-        fp.writelines(contents)
-    return True
-
-
 def store_sku_id(new_sku_id):
     global _in_path, _sku_ids
     # 避免重复读取
@@ -344,28 +277,136 @@ def get_sku_id_and_area_code():
 
 
 def get_argument_priority(arg_key):
-    global _arguments, _argument_shortcut, _argument_priority
-    _arg_idx = _arguments.index(arg_key)
-    if _arg_idx == -1:
-        _arg_idx = _argument_shortcut.index(arg_key)
-    if _arg_idx == -1:
-        return -1
-    return _argument_priority[_arg_idx]
+    global _arguments
+    if arg_key in _arguments:
+        return _arguments[arg_key]
+    return -1
+
+
+def handle_in_path(arg_value):
+    result = check_file(arg_value, True)
+    if result:
+        global _in_path
+        _in_path = arg_value
+    else:
+        print('-in_path failure.')
+    return result
+
+
+def store_area_code():
+    global _area_code, _in_path
+    # 不管需不需要写入，都检查是否可以写入
+    contents = read_file(_in_path, 'utf-8', True, True)
+    if contents is None:
+        return False
+    tmp_area_code = None
+    for idx in range(0, len(contents)):
+        if -1 != contents[idx].find('area_code='):
+            tmp_area_code = get_value_behind_equality_sign(contents[idx])
+            if tmp_area_code is not None and tmp_area_code != _area_code:
+                contents[idx] = 'area_code=' + _area_code + os.linesep
+            break
+    if tmp_area_code is not None:
+        if contents[-1][-1] != '\n':
+            contents[-1] += '\n'
+        contents.append('area_code=' + _area_code + os.linesep)
+    with codecs.open(_in_path, 'w', 'utf-8') as fp:
+        fp.writelines(contents)
+    return True
+
+
+# 参数只是占位置用的
+def generate_area_code(arg_value=None):
+    global _area_code, _alpha_rule
+    gen_area_code = ''
+    area_name = ''
+    cur_area_id = '0'
+    while True:
+        json_obj = get_area_code_info(cur_area_id)
+        if json_obj is None:
+            gen_area_code = gen_area_code[0:-1]
+            _area_code = gen_area_code
+            area_name = area_name[0:-1]
+            print('当前的区域为,' + area_name, '区域代码为:', _area_code)
+            break
+        print('输入如果含有 skip 则跳过.')
+        for obj in json_obj:
+            if 'id' not in obj or 'name' not in obj:
+                continue
+            # 暂且虑掉国外
+            if regex_result(_alpha_rule, obj['name']) is not None:
+                continue
+            print('name: ' + obj['name'] + ', id: ' + str(obj['id']))
+        area_id = input('请选择所在区域: ')
+        if area_id.find('skip') != -1:
+            print('已结束该命令.')
+            return False
+        int_area_id = int(area_id)
+        for obj in json_obj:
+            if int_area_id == obj['id']:
+                gen_area_code += area_id + '_'
+                area_name += obj['name'] + '-'
+                cur_area_id = area_id
+                break
+    print('存储到 in_path : ' + str(store_area_code()))
+    return True
+
+
+def set_area_code(arg_value):
+    result = check_area_code(arg_value)
+    if result:
+        print('存储到 in_path : ' + str(store_area_code()))
+    return result
+
+
+def add_sku_id(arg_value):
+    global _sku_ids
+    sku_id_list = arg_value.split(',')
+    result = True
+    for sku_id in sku_id_list:
+        if check_sku_id(sku_id) is False:
+            print('添加 sku_id :', sku_id, '失败.')
+            result = False
+            continue
+        if not store_sku_id(sku_id):
+            print('存储 sku_id', sku_id, '到 in_path失败')
+            result = False
+    return result
+
+
+_argument_option = {
+    '-in_path': handle_in_path, '-I': handle_in_path,
+    '-gen_area_code': generate_area_code, '-G': generate_area_code,
+    '-set_area_code': set_area_code, '-S': set_area_code,
+    '-add_sku_id': add_sku_id, '-A': add_sku_id,
+    '-remove_sku_id': _argument_priority[4], '-R': _argument_priority[4],
+    '-not_output_file': _argument_priority[5], '-N': _argument_priority[5],
+    '-out_path': _argument_priority[6], '-O': _argument_priority[6]
+}
 
 
 def handle_argv():
-    option_result = False
+    option_result = True
     argv = sys.argv[1:]
     arg_list = []
-    for arg in argv:
-        arg_key = get_argument_key(arg)
-        if arg_key is None:
+    for arg_cmd in argv:
+        arg_option = get_argument_option(arg_cmd)
+        if arg_option is None:
             continue
-        arg_priority = get_argument_priority(arg_key)
+        arg_priority = get_argument_priority(arg_option)
         if arg_priority == -1:
             continue
-        arg_value = get_value_behind_equality_sign(arg)
-        arg_list.append([arg_priority, arg_key, arg_value])
+        arg_value = get_value_behind_equality_sign(arg_cmd)
+        arg_list.append({
+            'priority': arg_priority,
+            'option': arg_option,
+            'value': arg_value
+        })
+    global _argument_option
+    for argument in sorted(arg_list, key=lambda arg: arg['priority']):
+        if not _argument_option[argument['option']](argument['value']):
+            option_result = False
+    return option_result
 
 
 def gen_sku_info():
