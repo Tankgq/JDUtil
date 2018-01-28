@@ -10,16 +10,16 @@ _headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
     'Content-Type': 'text/html;charset=UTF-8'
 }
-_argument_priority = [1, 2, 2, 3, 4, 5, 6, 6]
+_argument_priority = [0, 1, 2, 3, 4, 5]
 _arguments = {
     '-in_path': _argument_priority[0], '-I': _argument_priority[0],
     '-gen_area_code': _argument_priority[1], '-G': _argument_priority[1],
     '-set_area_code': _argument_priority[2], '-S': _argument_priority[2],
     '-add_sku_id': _argument_priority[3], '-A': _argument_priority[3],
+    '-remove_sku_id': _argument_priority[4], '-R': _argument_priority[4],
     '-out_path': _argument_priority[4], '-O': _argument_priority[4],
-    '-remove_sku_id': _argument_priority[5], '-R': _argument_priority[5],
-    '-custom_row': _argument_priority[6], '-C': _argument_priority[6],
-    '-tight': _argument_priority[6], '-T': _argument_priority[6],
+    '-custom_row': _argument_priority[5], '-C': _argument_priority[5],
+    '-tight': _argument_priority[5], '-T': _argument_priority[5],
 }
 _row_name_dic = {
     'price': 'price', 'P': 'price',
@@ -416,7 +416,7 @@ def set_area_code(arg_value):
 def add_sku_id(arg_value):
     if arg_value is None:
         return False
-    global _sku_ids
+    global _sku_ids, _in_path
     sku_id_list = arg_value.split(',')
     result = True
     sku_ids_store = []
@@ -426,7 +426,8 @@ def add_sku_id(arg_value):
             result = False
             continue
         sku_ids_store.append(sku_id)
-    if not store_sku_id(sku_ids_store):
+        _sku_ids[sku_id] = True
+    if not store_sku_id(sku_ids_store) and _in_path is None:
         result = False
     return result
 
