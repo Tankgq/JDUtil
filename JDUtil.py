@@ -25,11 +25,12 @@ _row_name_dic = {
     'price': 'price', 'P': 'price',
     'stock': 'stock', 'S': 'stock',
     'coupon': 'coupon', 'C': 'coupon',
-    'name': 'name', 'N': 'name'
+    'name': 'name', 'N': 'name',
+    'url': 'url', 'U': 'url'
 }
-_align_type_dic = {'price': 0, 'stock': 0, 'coupon': 0, 'name': 0}
-_max_width_dic = {'price': 5, 'stock': 5, 'coupon': 6, 'name': 4}
-_show_rows = ['price', 'stock', 'coupon', 'name']
+_align_type_dic = {'price': 0, 'stock': 0, 'coupon': 0, 'name': 0, 'url': 0}
+_max_width_dic = {'price': 5, 'stock': 5, 'coupon': 6, 'name': 4, 'url': 3}
+_show_rows = ['price', 'stock', 'coupon', 'name', 'url']
 _area_code = '16_1315_1316_53522'
 _out_path = './out.txt'
 _in_path = './in.txt'
@@ -554,6 +555,7 @@ def generate_sku_info():
 
     for sku_id in _sku_ids:
         _sku_info[sku_id] = {
+            'url': 'https://item.jd.com/' + sku_id + '.html',
             'price': get_product_price(sku_id),
             'stock': get_product_stock(sku_id, _area_code),
             'coupon': get_product_coupon(sku_id, _area_code),
@@ -563,6 +565,7 @@ def generate_sku_info():
         _max_width_dic['stock'] = max(_max_width_dic['stock'], get_length(_sku_info[sku_id]['stock']))
         _max_width_dic['coupon'] = max(_max_width_dic['coupon'], get_length(_sku_info[sku_id]['coupon']))
         _max_width_dic['name'] = max(_max_width_dic['name'], get_length(_sku_info[sku_id]['name']))
+        _max_width_dic['url'] = max(_max_width_dic['url'], get_length(_sku_info[sku_id]['url']))
 
 
 def inc(value):
