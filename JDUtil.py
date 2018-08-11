@@ -1,3 +1,7 @@
+import gzip
+import time
+import gevent
+import gevent.monkey
 from urllib import request
 
 import simplejson
@@ -7,8 +11,9 @@ import os
 import re
 
 _headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
-    'Content-Type': 'text/html;charset=UTF-8'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36',
+    'Content-Type': 'text/html;charset=UTF-8',
+    'Accept-Encoding': 'gzip'
 }
 _argument_priority = [0, 1, 2, 3, 4, 5]
 _arguments = {
@@ -38,6 +43,11 @@ _tight = False
 _sku_info = {}
 _sku_ids = {}
 
+_TYPE_PRICE = 1
+_TYPE_STOCK = 2
+_TYPE_COUPON = 3
+_TYPE_NAME = 4
+
 _double_byte_rule = re.compile('<strong>([\u4e00-\u9fa5]+)</strong>|(\d+)')
 _product_rule = re.compile('<div class=\"p-name\">([^<]*)</div>')
 _sku_ids_rule = re.compile('https://item.jd.com/(\d+)')
@@ -62,11 +72,11 @@ def get_html_content(url):
     req = request.Request(url=url, headers=_headers)
     page = request.urlopen(req)
     encoding = get_html_encoding(page.headers)
-    str_list = page.readlines()
-    contents = ""
-    for string in str_list:
-        contents += string.decode(encoding)
-    return contents
+    data = page.read()
+    if page.getheader(name='Content-Encoding') == 'gzip':
+        data = gzip.decompress(data)
+    data = data.decode(encoding)
+    return data
 
 
 def check_redirect(url):
@@ -550,16 +560,27 @@ def handle_argv():
     return option_result
 
 
+def get_info(type, sku_id):
+    if type == _TYPE_PRICE:
+        _sku_info[sku_id]['price'] = get_product_price(sku_id)
+    elif type == _TYPE_STOCK:
+        _sku_info[sku_id]['stock'] = get_product_stock(sku_id, _area_code)
+    elif type == _TYPE_COUPON:
+        _sku_info[sku_id]['coupon'] = get_product_coupon(sku_id, _area_code)
+    elif type == _TYPE_NAME:
+        _sku_info[sku_id]['name'] = get_product_name(sku_id)
+
+
 def generate_sku_info():
     global _sku_info, _max_width_dic
 
     for sku_id in _sku_ids:
         _sku_info[sku_id] = {
             'url': 'https://item.jd.com/' + sku_id + '.html',
-            'price': get_product_price(sku_id),
-            'stock': get_product_stock(sku_id, _area_code),
-            'coupon': get_product_coupon(sku_id, _area_code),
-            'name': get_product_name(sku_id)
+            'price': '',
+            'stock': '',
+            'coupon': '',
+            'name': ''
         }
         _max_width_dic['price'] = max(_max_width_dic['price'], get_length(_sku_info[sku_id]['price']))
         _max_width_dic['stock'] = max(_max_width_dic['stock'], get_length(_sku_info[sku_id]['stock']))
@@ -628,6 +649,9 @@ def show_sku_info():
 
 if __name__ == '__main__':
     handle_argv()
+    op = time.time()
     get_info_in_file()
+    gevent.monkey.patch_socket()
     generate_sku_info()
+    print('time: %s' % (time.time() - op))
     show_sku_info()
