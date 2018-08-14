@@ -80,6 +80,7 @@ def get_html_content(url):
 
 
 def check_redirect(url):
+    return True
     global _headers
     req = request.Request(url=url, headers=_headers)
     page = request.urlopen(req)
@@ -563,16 +564,21 @@ def handle_argv():
 def get_info(type, sku_id):
     if type == _TYPE_PRICE:
         _sku_info[sku_id]['price'] = get_product_price(sku_id)
+        _max_width_dic['price'] = max(_max_width_dic['price'], get_length(_sku_info[sku_id]['price']))
     elif type == _TYPE_STOCK:
         _sku_info[sku_id]['stock'] = get_product_stock(sku_id, _area_code)
+        _max_width_dic['stock'] = max(_max_width_dic['stock'], get_length(_sku_info[sku_id]['stock']))
     elif type == _TYPE_COUPON:
         _sku_info[sku_id]['coupon'] = get_product_coupon(sku_id, _area_code)
+        _max_width_dic['coupon'] = max(_max_width_dic['coupon'], get_length(_sku_info[sku_id]['coupon']))
     elif type == _TYPE_NAME:
         _sku_info[sku_id]['name'] = get_product_name(sku_id)
+        _max_width_dic['name'] = max(_max_width_dic['name'], get_length(_sku_info[sku_id]['name']))
 
 
 def generate_sku_info():
     global _sku_info, _max_width_dic
+    threads = []
 
     for sku_id in _sku_ids:
         _sku_info[sku_id] = {
@@ -582,11 +588,12 @@ def generate_sku_info():
             'coupon': '',
             'name': ''
         }
-        _max_width_dic['price'] = max(_max_width_dic['price'], get_length(_sku_info[sku_id]['price']))
-        _max_width_dic['stock'] = max(_max_width_dic['stock'], get_length(_sku_info[sku_id]['stock']))
-        _max_width_dic['coupon'] = max(_max_width_dic['coupon'], get_length(_sku_info[sku_id]['coupon']))
-        _max_width_dic['name'] = max(_max_width_dic['name'], get_length(_sku_info[sku_id]['name']))
         _max_width_dic['url'] = max(_max_width_dic['url'], get_length(_sku_info[sku_id]['url']))
+        threads.append(gevent.spawn(get_info, _TYPE_PRICE, sku_id))
+        threads.append(gevent.spawn(get_info, _TYPE_STOCK, sku_id))
+        threads.append(gevent.spawn(get_info, _TYPE_COUPON, sku_id))
+        threads.append(gevent.spawn(get_info, _TYPE_NAME, sku_id))
+    gevent.joinall(threads)
 
 
 def inc(value):
@@ -649,9 +656,9 @@ def show_sku_info():
 
 if __name__ == '__main__':
     handle_argv()
-    op = time.time()
     get_info_in_file()
-    gevent.monkey.patch_socket()
+    gevent.monkey.patch_all()
+    op = time.time()
     generate_sku_info()
     print('time: %s' % (time.time() - op))
     show_sku_info()
