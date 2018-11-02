@@ -654,6 +654,13 @@ def show_sku_info():
                 fp.write(line + os.linesep)
 
 
+def open_out_file():
+    global _out_path
+    if _out_path is None:
+        return
+    os.system('start {}'.format(os.path.abspath(_out_path)))
+
+
 if __name__ == '__main__':
     handle_argv()
     get_info_in_file()
@@ -662,3 +669,4 @@ if __name__ == '__main__':
     generate_sku_info()
     print('time: %s' % (time.time() - op))
     show_sku_info()
+    open_out_file()
